@@ -1,0 +1,9 @@
+{
+  "name": "sahmed-private",
+  "version": "7.1.0",
+  "description": "Sahmed Private V7 - All features verified",
+  "dependencies": {
+    "@capacitor/core": "^5.7.0",
+    "@capacitor/android": "^5.7.0"
+  }
+}

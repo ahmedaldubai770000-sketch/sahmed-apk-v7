@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>موقعنا الخاص - ساحمد</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0f;color:#fff;font-family:system-ui;min-height:100vh;display:flex;flex-direction:column}
+.login{max-width:380px;margin:40px auto;background:#15151f;padding:30px;border-radius:20px;width:90%}
+.login h1{text-align:center;margin-bottom:20px;background:linear-gradient(90deg,#a78bfa,#ec4899);-webkit-background-clip:text;color:transparent}
+input{width:100%;padding:14px;margin:8px 0;border-radius:12px;border:1px solid #333;background:#1e1e2e;color:#fff;font-size:16px}
+button{width:100%;padding:14px;background:linear-gradient(90deg,#8b5cf6,#ec4899);border:none;border-radius:12px;color:#fff;font-weight:bold;font-size:16px;cursor:pointer;margin-top:10px}
+.chat{display:flex;flex-direction:column;height:100vh}
+.header{padding:12px 16px;background:#15151f;display:flex;align-items:center;gap:12px;border-bottom:1px solid #222}
+.header .avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#ec4899);display:flex;align-items:center;justify-content:center;font-weight:bold}
+.status{font-size:12px;color:#4ade80}
+.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;background:#0f0f14}
+.bubble{max-width:78%;padding:12px 16px;border-radius:18px;line-height:1.5;word-break:break-word}
+.bubble.me{align-self:flex-start;background:linear-gradient(135deg,#8b5cf6,#ec4899);border-bottom-right-radius:6px}
+.bubble.partner{align-self:flex-end;background:#23233a;border-bottom-left-radius:6px}
+.bubble .time{font-size:10px;opacity:.6;margin-top:6px}
+.input-area{padding:12px;background:#15151f;display:flex;gap:10px;align-items:center;border-top:1px solid #222}
+.input-area input{flex:1;margin:0}
+.send{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#ec4899);border:none;color:#fff;font-size:20px;cursor:pointer}
+.tools{display:flex;gap:8px;padding:8px 16px;background:#15151f;overflow-x:auto}
+.tool{padding:8px 14px;background:#23233a;border-radius:20px;border:none;color:#fff;font-size:13px;white-space:nowrap;cursor:pointer}
+#videoContainer{position:fixed;inset:0;background:#000;z-index:100;display:none;flex-direction:column}
+#videoContainer video{width:100%;height:100%;object-fit:cover}
+#endCall{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:#ef4444;padding:14px 28px;border-radius:30px;border:none;color:#fff;font-weight:bold}
+.ringing{animation: pulse 1s infinite}
+@keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.05)}100%{transform:scale(1)}}
+</style>
+
+<script>
+// كشف التطبيق الأصلي
+window.isNativeApp = !!window.Android || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+console.log('isNativeApp:', window.isNativeApp);
+</script>
+</head>
+<body>
+<div id="loginScreen" class="login">
+<h1>موقعنا الخاص 💜</h1>
+<p style="text-align:center;color:#888;margin-bottom:15px">سـًٌِـاحـًٌِـمـًٌِـد و 𝐒𝐚𝐡𝐦𝐞𝐝</p>
+<input id="idInput" placeholder="رقم ID (101 أو 102)" inputmode="numeric">
+<input id="codeInput" type="password" placeholder="رمز الدخول">
+<button onclick="doLogin()">دخول</button>
+<p style="text-align:center;margin-top:15px;color:#666;font-size:13px">101 / 1010 لك<br>102 / 2020 لها</p>
+</div>
+
+<div id="chatScreen" class="chat" style="display:none">
+<div class="header">
+<div class="avatar" id="partnerAvatar">S</div>
+<div style="flex:1">
+<div id="partnerName" style="font-weight:bold">حبيبتي</div>
+<div class="status" id="connStatus">جاري الاتصال...</div>
+</div>
+<button onclick="requestScreen()" id="screenBtn" style="padding:8px 12px;border-radius:20px;border:none;background:#23233a;color:#fff;display:none">👁️ شوف شاشتها</button>
+<button onclick="startCall(true)" style="padding:8px 12px;border-radius:20px;border:none;background:#23233a;color:#fff">📹</button>
+<button onclick="startCall(false)" style="padding:8px 12px;border-radius:20px;border:none;background:#23233a;color:#fff">📞</button>
+</div>
+
+<div class="messages" id="messagesDiv"></div>
+
+<div class="tools">
+<button class="tool" onclick="quickSend('أحبك 💜')">💜 أحبك</button>
+<button class="tool" onclick="quickSend('وينك؟')">وينك؟</button>
+<button class="tool" onclick="quickSend('اشتقت لك')">اشتقت لك</button>
+<button class="tool" onclick="quickSend('نامي بدري')">نامي بدري</button>
+</div>
+
+<div class="input-area">
+<input id="msgInput" placeholder="اكتبي شي حلو..." onkeydown="if(event.key==='Enter')sendMsg()">
+<label style="background:#23233a;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer">🖼️<input type="file" id="imgInput" accept="image/*" style="display:none" onchange="sendImage(this)"></label>
+<button class="send" onclick="sendMsg()">➤</button>
+</div>
+<div style="text-align:center;font-size:11px;color:#444;padding:6px">إشعارات خلفية مفعلة • يمن - سعودية • <span onclick="logout()" style="color:#888;cursor:pointer">خروج</span></div>
+</div>
+
+<div id="videoContainer">
+<video id="localVideo" autoplay muted playsinline></video>
+<video id="remoteVideo" autoplay playsinline style="position:absolute;top:20px;left:20px;width:120px;height:180px;border-radius:12px;border:2px solid #fff"></video>
+<button id="endCall" onclick="endCall()">إنهاء</button>
+</div>
+
+<audio id="ringtone" loop preload="auto">
+<source src="https://cdn.freesound.org/previews/219/219369_3219677-lq.mp3" type="audio/mpeg">
+</audio>
+<audio id="msgSound" preload="auto">
+<source src="https://cdn.freesound.org/previews/456/456588_9498993-lq.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+const ACCOUNTS = {
+  "101": {code:"1010", name:"سـًٌِـاحـًٌِـمـًٌِـد", partner:"102", partnerName:"𝐒𝐚𝐡𝐦𝐞𝐝؍ُ̣؍ً𓆩", avatar:"ح"},
+  "102": {code:"2020", name:"𝐒𝐚𝐡𝐦𝐞𝐝؍ُ̣؍ً𓆩", partner:"101", partnerName:"سـًٌِـاحـًٌِـمـًٌِـد", avatar:"س"}
+};
+let myId=null, myInfo=null, peer=null, conn=null, callObj=null, localStream=null;
+let messages = JSON.parse(localStorage.getItem('chat_msgs')||'[]');
+
+// Service Worker + Notifications
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').then(()=>console.log('SW registered'));
+}
+function requestNotificationPermission(){
+  if('Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+}
+function showNotification(title, body){
+  if('Notification' in window && Notification.permission==='granted'){
+    if(document.hidden){
+      new Notification(title, {body, icon:'https://cdn-icons-png.flaticon.com/512/833/833472.png', vibrate:[200,100,200]});
+    }
+  }
+  // sound
+  try{ document.getElementById('msgSound').play().catch(()=>{}); }catch(e){}
+}
+
+function playRingtone(){ try{ document.getElementById('ringtone').play(); document.getElementById('videoContainer').classList.add('ringing'); }catch(e){} }
+function stopRingtone(){ try{ document.getElementById('ringtone').pause(); document.getElementById('ringtone').currentTime=0; document.getElementById('videoContainer').classList.remove('ringing'); }catch(e){} }
+
+function doLogin(){
+  const id=document.getElementById('idInput').value.trim();
+  const code=document.getElementById('codeInput').value.trim();
+  if(!ACCOUNTS[id] || ACCOUNTS[id].code!==code){ alert('ID أو الرمز خطأ'); return; }
+  myId=id; myInfo=ACCOUNTS[id];
+  localStorage.setItem('myId',id);
+  requestNotificationPermission();
+  initChat();
+}
+
+function initChat(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('chatScreen').style.display='flex';
+  document.getElementById('partnerName').textContent=myInfo.partnerName;
+  document.getElementById('partnerAvatar').textContent=myInfo.avatar;
+  if(myId==="101"){ document.getElementById('screenBtn').style.display='block'; }
+  renderMessages();
+  setupPeer();
+  startPolling();
+}
+
+function setupPeer(){
+  peer = new Peer('sahmed-'+myId+'-v5', {config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}});
+  peer.on('open',()=>{document.getElementById('connStatus').textContent='متصل - إشعارات مفعلة ✅';});
+  peer.on('connection', c=>{ conn=c; bindConn(); });
+  peer.on('call', async incomingCall=>{
+    playRingtone();
+    const isVideo = incomingCall.metadata?.video;
+    if(confirm((isVideo?'مكالمة فيديو':'مكالمة صوتية')+' من '+myInfo.partnerName+' - رد؟')){
+      stopRingtone();
+      const stream = await navigator.mediaDevices.getUserMedia({video:isVideo, audio:true});
+      localStream=stream;
+      incomingCall.answer(stream);
+      handleCall(incomingCall);
+    } else { stopRingtone(); }
+  });
+  setTimeout(()=>{ tryConnect(); }, 1500);
+}
+
+function tryConnect(){
+  if(conn && conn.open) return;
+  const otherId='sahmed-'+myInfo.partner+'-v5';
+  const c=peer.connect(otherId);
+  c.on('open',()=>{ conn=c; bindConn(); document.getElementById('connStatus').textContent='متصل مباشر + إشعارات ✅'; });
+}
+
+function bindConn(){
+  conn.on('data', data=>{
+    if(data.type==='msg'){ receiveMsg(data.payload, false); showNotification('رسالة جديدة 💜', data.payload.text||'صورة'); }
+    if(data.type==='call_request'){ playRingtone(); showNotification('اتصال وارد 📞', myInfo.partnerName+' يتصل بك'); }
+    if(data.type==='request_screen' && myId==='102'){
+      playRingtone();
+      if(confirm('萨哈迈德请求查看你的屏幕，你同意吗？')){
+        stopRingtone(); shareScreen();
+      } else { stopRingtone(); }
+    }
+  });
+}
+
+function renderMessages(){
+  const div=document.getElementById('messagesDiv');
+  div.innerHTML='';
+  messages.filter(m=> (m.from===myId && m.to===myInfo.partner) || (m.from===myInfo.partner && m.to===myId) ).forEach(m=>{
+    const b=document.createElement('div');
+    b.className='bubble '+(m.from===myId?'me':'partner');
+    let html = m.text ? `<div>${m.text}</div>` : '';
+    if(m.image) html+=`<img src="${m.image}" style="max-width:200px;border-radius:12px;margin-top:6px">`;
+    html+=`<div class="time">${m.time} ✓✓</div>`;
+    b.innerHTML=html;
+    div.appendChild(b);
+  });
+  div.scrollTop=div.scrollHeight;
+}
+
+function saveMessages(){ localStorage.setItem('chat_msgs', JSON.stringify(messages)); }
+
+async function sendMsg(){
+  const inp=document.getElementById('msgInput');
+  const text=inp.value.trim();
+  if(!text) return;
+  const msg={id:Date.now().toString(), from:myId, to:myInfo.partner, text, time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), ts:Date.now()};
+  messages.push(msg); saveMessages(); renderMessages(); inp.value='';
+  if(conn && conn.open){ conn.send({type:'msg', payload:msg}); }
+  await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(msg)}).catch(()=>{});
+}
+
+function quickSend(t){ document.getElementById('msgInput').value=t; sendMsg(); }
+
+function receiveMsg(msg, fromServer){
+  if(messages.find(m=>m.id===msg.id)) return;
+  messages.push(msg); saveMessages(); renderMessages();
+  if(fromServer){ fetch('/api/messages?for='+myId, {method:'DELETE'}).catch(()=>{}); }
+  if(document.hidden){ showNotification('رسالة جديدة من '+myInfo.partnerName, msg.text||'📷 صورة'); }
+}
+
+function sendImage(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const msg={id:Date.now().toString(), from:myId, to:myInfo.partner, text:'', image:e.target.result, time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), ts:Date.now()};
+    messages.push(msg); saveMessages(); renderMessages();
+    if(conn && conn.open) conn.send({type:'msg', payload:msg});
+    fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(msg)}).catch(()=>{});
+  };
+  reader.readAsDataURL(file);
+}
+
+async function startPolling(){
+  setInterval(async ()=>{
+    try{
+      const res=await fetch('/api/messages?for='+myId);
+      const data=await res.json();
+      if(data && data.length){
+        data.forEach(m=>{ receiveMsg({id:m.id, from:m.from, to:m.to, text:m.text, image:m.image, time:m.time, ts:m.ts}, true); });
+        await fetch('/api/messages?for='+myId, {method:'DELETE'});
+      }
+    }catch(e){}
+    if(!conn || !conn.open) tryConnect();
+  }, 800);
+}
+
+async function startCall(withVideo){
+  try{
+    if(conn && conn.open) conn.send({type:'call_request'});
+    await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({from:myId, to:myInfo.partner, text: withVideo?'📹 مكالمة فيديو واردة - افتح الموقع للرد':'📞 مكالمة صوتية واردة - افتح الموقع للرد', time:new Date().toLocaleTimeString(), type:'call_request'})});
+    localStream=await navigator.mediaDevices.getUserMedia({video:withVideo, audio:true});
+    document.getElementById('videoContainer').style.display='flex';
+    document.getElementById('localVideo').srcObject=localStream;
+    const otherId='sahmed-'+myInfo.partner+'-v5';
+    const c=peer.call(otherId, localStream, {metadata:{video:withVideo}});
+    handleCall(c);
+  }catch(e){ alert('فشل فتح الكاميرا/المايك: '+e.message); }
+}
+
+function handleCall(c){
+  callObj=c;
+  stopRingtone();
+  document.getElementById('videoContainer').style.display='flex';
+  c.on('stream', stream=>{ document.getElementById('remoteVideo').srcObject=stream; });
+  c.on('close', endCall);
+}
+
+function endCall(){
+  document.getElementById('videoContainer').style.display='none';
+  stopRingtone();
+  if(callObj) callObj.close();
+  if(localStream) localStream.getTracks().forEach(t=>t.stop());
+}
+
+async function requestScreen(){
+  if(conn && conn.open){
+    conn.send({type:'request_screen'});
+    alert('已发送屏幕共享请求');
+  }else{
+    await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({from:myId, to:myInfo.partner, text:'萨哈迈德请求查看你的屏幕，你同意吗？ 📺', time:new Date().toLocaleTimeString(), type:'request_screen'})});
+    alert('她现在不在线，已通过服务器发送请求');
+  }
+}
+
+async function shareScreen(){
+  // إذا في تطبيق أندرويد حقيقي - استخدم الجسر الأصلي
+  try{
+    if(window.Android && window.Android.startScreenCapture){
+      window.Android.startScreenCapture();
+      document.getElementById('videoContainer').style.display='flex';
+      document.getElementById('localVideo').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#000;color:#fff">جاري مشاركة شاشتها...</div>';
+      return;
+    }
+    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ScreenShare){
+      await window.Capacitor.Plugins.ScreenShare.start();
+      return;
+    }
+    // للكمبيوتر فقط
+    if(!navigator.mediaDevices.getDisplayMedia){
+      if(/Android|iPhone|iPad/i.test(navigator.userAgent)){
+        alert('مشاركة شاشة الجوال تحتاج التطبيق الحقيقي V7.\n\nأنت الآن تستخدم نسخة WebView قديمة.\nحمّل APK V7 الجديد اللي فيه الجسر الأصلي.');
+      } else {
+        alert('مشاركة الشاشة تحتاج كمبيوتر - من الجوال تحتاج التطبيق الحقيقي');
+      }
+      return;
+    }
+    const screenStream=await navigator.mediaDevices.getDisplayMedia({video:true});
+    const otherId='sahmed-'+myInfo.partner+'-v5';
+    const c=peer.call(otherId, screenStream);
+    document.getElementById('videoContainer').style.display='flex';
+    document.getElementById('localVideo').srcObject=screenStream;
+    screenStream.getVideoTracks()[0].onended=()=>{ endCall(); };
+  }catch(e){
+    if(e.message.includes('getDisplayMedia')){
+      alert('هذه النسخة قديمة (WebView).\n\nمشاركة شاشة الجوال الحقيقية تحتاج APK V7 الجديد اللي بنيته لك الآن.\n\nحمل النسخة الجديدة من الرابط الجديد.');
+    } else {
+      alert('فشل مشاركة الشاشة: '+e.message);
+    }
+  }
+}
+
+window.onScreenShareGranted = function(){
+  alert('تم السماح بمشاركة الشاشة ✅');
+};
+
+
+function logout(){ localStorage.removeItem('myId'); location.reload(); }
+
+const saved=localStorage.getItem('myId');
+if(saved && ACCOUNTS[saved]){ document.getElementById('idInput').value=saved; document.getElementById('codeInput').value=ACCOUNTS[saved].code; doLogin(); }
+</script>
+</body>
+</html>

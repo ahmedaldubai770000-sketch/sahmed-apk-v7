@@ -1,0 +1,6 @@
+{
+  "appId": "com.sahmed.privatechat",
+  "appName": "Sahmed Private",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
