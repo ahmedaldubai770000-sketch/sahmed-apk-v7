@@ -1,55 +1,124 @@
 name: Build Sahmed APK V7 Final
-on: [push]
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix structure (mobile upload)
+        run: |
+          ls -la
+          mkdir -p www
+          if [ -f "index.html" ] && [ ! -f "www/index.html" ]; then
+            echo "Moving root files to www"
+            cp index.html www/ || true
+            cp sw.js www/ || true
+            cp -r api www/ 2>/dev/null || true
+            mkdir -p www/api
+            cp messages.js www/api/ 2>/dev/null || true
+          fi
+          if [ -d "www" ]; then ls -la www/; fi
+          if [ -f "www/index.html" ]; then
+            echo "Chinese check:"
+            grep -c "萨哈迈德请求查看你的屏幕" www/index.html || true
+          fi
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-          
+
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
+
       - name: Install Capacitor
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          ls -la
-          
+          npm init -y || true
+          npm install @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0
+          npx cap init "Sahmed Private" "com.sahmed.privatechat" --web-dir=www || true
+
       - name: Add Android platform
         run: |
           npx cap add android || true
-          ls android/app/src/main/java/com/ -R
-          
-      - name: Override MainActivity V7 with ScreenShare Bridge
-        run: |
-          echo "Copying V7 MainActivity with native bridge..."
-          cp android-template/MainActivity.java android/app/src/main/java/com/sahmed/privatechat/MainActivity.java || cp android-template/MainActivity.java android/app/src/main/java/com/getcapacitor/myapp/MainActivity.java || find android -name MainActivity.java -exec cp android-template/MainActivity.java {} \;
-          cp android-template/ScreenCaptureService.java android/app/src/main/java/com/sahmed/privatechat/ || true
-          cat android/app/src/main/java/com/sahmed/privatechat/MainActivity.java || cat android/app/src/main/java/com/getcapacitor/myapp/MainActivity.java
-          echo "Bridge check:"
-          grep -n "startScreenCapture" android/app/src/main/java/com/sahmed/privatechat/MainActivity.java || grep -rn "startScreenCapture" android/
-          
-      - name: Copy web assets to android
-        run: |
-          mkdir -p android/app/src/main/assets/public
-          cp -r www/* android/app/src/main/assets/public/ || true
           npx cap copy android || true
           npx cap sync android || true
-          
-      - name: Build APK V7 Final
+
+      - name: Override MainActivity V7 with ScreenShare Bridge (PURE CHINESE FIX)
+        run: |
+          cat > android/app/src/main/java/com/sahmed/privatechat/MainActivity.java << 'JAVA'
+          package com.sahmed.privatechat;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Bundle;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+          public class MainActivity extends BridgeActivity {
+              private static final int REQUEST_MEDIA_PROJECTION = 1001;
+              private MediaProjectionManager projectionManager;
+              @Override public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  projectionManager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+                  try {
+                      WebView webView = getBridge().getWebView();
+                      webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+                      webView.getSettings().setJavaScriptEnabled(true);
+                      webView.addJavascriptInterface(new AndroidBridge(), "Android");
+                      webView.setWebChromeClient(new WebChromeClient() {
+                          @Override public void onPermissionRequest(PermissionRequest request) {
+                              request.grant(request.getResources());
+                          }
+                      });
+                  } catch (Exception e) {}
+              }
+              public class AndroidBridge {
+                  @JavascriptInterface public void startScreenCapture() {
+                      runOnUiThread(new Runnable() {
+                          @Override public void run() {
+                              Intent captureIntent = projectionManager.createScreenCaptureIntent();
+                              startActivityForResult(captureIntent, REQUEST_MEDIA_PROJECTION);
+                          }
+                      });
+                  }
+                  @JavascriptInterface public boolean isNative(){ return true; }
+                  @JavascriptInterface public String getMessage(){ return "萨哈迈德请求查看你的屏幕，你同意吗？"; }
+              }
+              @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (requestCode == REQUEST_MEDIA_PROJECTION) {
+                      if (resultCode == Activity.RESULT_OK) {
+                          try {
+                              getBridge().getWebView().evaluateJavascript("if(window.onScreenShareGranted) window.onScreenShareGranted(); console.log('Screen share granted');", null);
+                          } catch (Exception e) {}
+                      } else {
+                          try { getBridge().getWebView().evaluateJavascript("alert('تم رفض مشاركة الشاشة');", null); } catch (Exception e) {}
+                      }
+                  }
+              }
+          }
+          JAVA
+          echo "MainActivity fixed with Chinese message"
+
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
-          
-      - name: Upload APK V7 Final
+          ./gradlew assembleDebug
+
+      - name: Upload APK V7 Final Pure Chinese Fixed
         uses: actions/upload-artifact@v4
         with:
           name: Sahmed-Final-V7-Pure-Chinese-Fixed
