@@ -1,0 +1,112 @@
+name: Build Sahmed APK V5
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix structure (mobile upload)
+        run: |
+          ls -la
+          mkdir -p www
+          # If index.html is at root, move to www
+          if [ -f "index.html" ] && [ ! -f "www/index.html" ]; then
+            echo "Moving root files to www"
+            cp index.html www/ || true
+            cp sw.js www/ || true
+            cp messages.js www/ 2>/dev/null || true
+            mkdir -p www/api
+            cp messages.js www/api/ 2>/dev/null || true
+            cp vercel.json www/ 2>/dev/null || true
+          fi
+          # Create api folder structure
+          if [ -f "messages.js" ]; then
+            mkdir -p api
+            cp messages.js api/ 2>/dev/null || true
+          fi
+          ls -la www/
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Capacitor
+        run: |
+          npm init -y || true
+          npm install @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0
+          npx cap init "Sahmed Private" "com.sahmed.privatechat" --web-dir=www || true
+
+      - name: Add Android platform
+        run: |
+          npx cap add android || true
+          npx cap copy android || true
+          npx cap sync android || true
+
+      - name: Override MainActivity with ScreenShare
+        run: |
+          cat > android/app/src/main/java/com/sahmed/privatechat/MainActivity.java << 'JAVA'
+          package com.sahmed.privatechat;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Bundle;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+          public class MainActivity extends BridgeActivity {
+              private static final int REQUEST_MEDIA_PROJECTION = 1001;
+              private MediaProjectionManager projectionManager;
+              @Override public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  projectionManager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+                  try {
+                      WebView webView = getBridge().getWebView();
+                      webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+                      webView.setWebChromeClient(new WebChromeClient() {
+                          @Override public void onPermissionRequest(PermissionRequest request) {
+                              request.grant(request.getResources());
+                          }
+                      });
+                  } catch (Exception e) {}
+              }
+              public void startScreenCapture() {
+                  Intent captureIntent = projectionManager.createScreenCaptureIntent();
+                  startActivityForResult(captureIntent, REQUEST_MEDIA_PROJECTION);
+              }
+              @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (requestCode == REQUEST_MEDIA_PROJECTION && resultCode == Activity.RESULT_OK) {
+                      try {
+                          getBridge().getWebView().evaluateJavascript("window.onScreenShareGranted && window.onScreenShareGranted();", null);
+                      } catch (Exception e) {}
+                  }
+              }
+          }
+          JAVA
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sahmed-Private-V5-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
